@@ -17,15 +17,15 @@ jobs:
         image: mcr.microsoft.com/mssql/server:2022-latest
         env:
           ACCEPT_EULA: "Y"
-          MSSQL_SA_PASSWORD: "Lab_Pa55word!"
+          MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
           MSSQL_PID: "Developer"
         ports:
           - 1433:1433
         # No healthcheck on this image; we wait for sqlcmd in the step below.
 
     env:
-      SQLCMDPASSWORD: "Lab_Pa55word!"
-      SA_PASSWORD: "Lab_Pa55word!"
+      SQLCMDPASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
+      SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
 
     steps:
       - name: Checkout
