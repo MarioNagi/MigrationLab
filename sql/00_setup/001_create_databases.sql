@@ -1,0 +1,4 @@
+IF DB_ID('Northwind') IS NULL CREATE DATABASE Northwind;
+IF DB_ID('CsvRaw') IS NULL CREATE DATABASE CsvRaw;
+IF DB_ID('MigrationLab') IS NULL CREATE DATABASE MigrationLab;
+GO

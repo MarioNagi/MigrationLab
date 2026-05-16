@@ -1,0 +1,5 @@
+EntityType,Stage,TotalRecords,HasCompanyName,HasContactName,HasEmail,HasPhone,HasCompleteAddress,CompanyNamePct,EmailPct,PhonePct
+Customers,Canonical,199,199,196,103,194,191,100.00,51.76,97.49
+Customers,Target Model,184,184,182,98,180,177,100.00,53.26,97.83
+Vendors,Canonical,63,63,61,30,62,60,100.00,47.62,98.41
+Vendors,Target Model,59,59,57,29,58,57,100.00,49.15,98.31

@@ -1,0 +1,34 @@
+# Local-only planning / draft files (not part of the public project)
+idea.md
+
+# Claude Code session files
+.claude/
+
+# Local secrets and env files
+.env
+.env.*
+!.env.example
+
+# SQL Server local dumps and backups
+*.bak
+*.bacpac
+*.dacpac
+*.mdf
+*.ldf
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+desktop.ini
+*.swp
+*~
+
+# Build artefacts
+bin/
+obj/
+node_modules/
+__pycache__/
+*.pyc
+
+# Logs
+*.log

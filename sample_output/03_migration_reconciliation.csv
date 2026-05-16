@@ -1,0 +1,5 @@
+EntityType,SourceSystem,SourceRecords,LoadedRecords,MergedAwayRecords,OtherRejectedRecords,ReconciliationDelta,AccountedForPct
+Customers,Northwind,91,89,2,0,0,100.00
+Customers,CsvRaw,108,95,12,1,0,100.00
+Vendors,Northwind,29,29,0,0,0,100.00
+Vendors,CsvRaw,34,30,4,0,0,100.00

@@ -1,0 +1,2 @@
+BatchID,BatchStart,BatchEnd,BatchDurationMs,StepsStarted,StepsCompleted,StepsFailed,TotalRowsAffected,BatchStatus
+BATCH-20260501080000,2026-05-01T08:01:12.001,2026-05-01T08:01:18.442,6441,6,6,0,1248,COMPLETED

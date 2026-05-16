@@ -1,0 +1,5 @@
+EntityType,SourceSystem,RecordCount,SnapshotTime
+Customers,Northwind,91,2026-05-01T08:00:00.000
+Suppliers,Northwind,29,2026-05-01T08:00:00.000
+Customers,CsvRaw,108,2026-05-01T08:00:00.000
+Vendors,CsvRaw,34,2026-05-01T08:00:00.000

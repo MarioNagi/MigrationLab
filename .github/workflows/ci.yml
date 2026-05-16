@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & test against SQL Server 2022
+    runs-on: ubuntu-latest
+
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Lab_Pa55word!"
+          MSSQL_PID: "Developer"
+        ports:
+          - 1433:1433
+        # No healthcheck on this image; we wait for sqlcmd in the step below.
+
+    env:
+      SQLCMDPASSWORD: "Lab_Pa55word!"
+      SA_PASSWORD: "Lab_Pa55word!"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlcmd (mssql-tools18) + Northwind sample
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for SQL Server to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" >/dev/null 2>&1; then
+              echo "SQL Server is ready."
+              exit 0
+            fi
+            echo "Waiting for SQL Server ($i)..."
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time." >&2
+          exit 1
+
+      - name: Download Northwind script
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o /tmp/instnwnd.sql \
+            https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/northwind-pubs/instnwnd.sql
+
+      - name: Apply Northwind
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -i /tmp/instnwnd.sql
+
+      - name: Phase — 00_setup (CsvRaw + databases)
+        run: |
+          set -euxo pipefail
+          for f in \
+            sql/00_setup/001_create_databases.sql \
+            sql/00_setup/003_create_csvraw_tables.sql \
+            sql/00_setup/004_generate_csvraw_from_northwind.sql \
+            sql/00_setup/005_generate_csvraw_netnew.sql \
+            sql/00_setup/006_validate_csvraw_load.sql
+          do
+            echo "::group::$f"
+            /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -i "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Phase — 01_migrationlab (schemas, tables, views, ETL infra)
+        run: |
+          set -euxo pipefail
+          for f in \
+            sql/01_migrationlab/010_create_schemas.sql \
+            sql/01_migrationlab/020_create_snapshot_tables.sql \
+            sql/01_migrationlab/030_create_ref_tables.sql \
+            sql/01_migrationlab/040_create_work_tables.sql \
+            sql/01_migrationlab/050_create_target_model_tables.sql \
+            sql/01_migrationlab/060_create_target_tables.sql \
+            sql/01_migrationlab/070_create_reporting_views.sql \
+            sql/01_migrationlab/075_create_etl_infra.sql
+          do
+            echo "::group::$f"
+            /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -d MigrationLab -i "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Phase — 02_etl_procs (create stored procedures)
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -d MigrationLab \
+            -i sql/02_etl_procs/080_create_etl_procs.sql
+
+      - name: Run pipeline (etl.usp_RunAll)
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -d MigrationLab \
+            -Q "DECLARE @b VARCHAR(50); EXEC etl.usp_RunAll @BatchID = @b OUTPUT; PRINT @b;"
+
+      - name: Run test suite
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -d MigrationLab \
+            -i tests/run_all_tests.sql
+
+      - name: Print reconciliation view
+        if: always()
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d MigrationLab \
+            -Q "SELECT * FROM reporting.MigrationReconciliation ORDER BY EntityType, SourceSystem;" || true

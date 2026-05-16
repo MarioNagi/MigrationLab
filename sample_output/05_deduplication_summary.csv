@@ -1,0 +1,3 @@
+EntityType,TotalCanonicalRecords,TotalMatchGroups,DuplicateGroups,UniqueGroups,TotalRecordsInGroups,SurvivedRecords,DuplicatesResolved
+Customers,199,184,14,170,199,184,15
+Vendors,63,59,4,55,63,59,4
