@@ -8,15 +8,15 @@ Test
 ----
 The most recent batch in etl.RunLog must have:
   - zero FAILED steps
-  - StepsStarted = StepsCompleted (no half-finished steps)
+  - zero rows left in STARTED state
 
-If etl.RunLog is empty, the test is skipped (the script-style runner does
-not write to RunLog). The stored-proc orchestrator (etl.usp_RunAll) does.
+If etl.RunLog is empty, the test is skipped because the script-style
+runner does not write to RunLog. The stored-proc orchestrator does.
 */
 
 IF NOT EXISTS (SELECT 1 FROM etl.RunLog)
 BEGIN
-    PRINT 'SKIP: 060_test_runlog_clean_run (etl.RunLog is empty — script-style run?)';
+    PRINT 'SKIP: 060_test_runlog_clean_run (etl.RunLog is empty - script-style run?)';
     RETURN;
 END;
 
@@ -43,8 +43,8 @@ PRINT CONCAT('  FAILED   : ', @failed);
 IF @failed > 0
     THROW 60060, 'FAIL: latest batch has FAILED steps.', 1;
 
-IF @started <> @completed
-    THROW 60061, 'FAIL: latest batch has half-finished steps (STARTED <> COMPLETED).', 1;
+IF @started > 0
+    THROW 60061, 'FAIL: latest batch has half-finished steps still marked STARTED.', 1;
 
 PRINT 'PASS: 060_test_runlog_clean_run';
 GO

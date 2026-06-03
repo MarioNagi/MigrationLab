@@ -3,50 +3,15 @@
     Run the MigrationLab pipeline end-to-end against a SQL Server instance.
 
 .DESCRIPTION
-    Executes every SQL file in the lab in dependency order:
+    Executes the SQL files in dependency order:
       1. sql/00_setup/*.sql        (databases + CsvRaw load)
       2. sql/01_migrationlab/*.sql (schemas, tables, reporting views, ETL infra)
-      3. sql/02_etl_procs/080_*.sql (stored-proc style — preferred)
-         OR all sql/02_etl_procs/*.sql (script style — pass -ScriptStyle)
+      3. sql/02_etl_procs/080_*.sql (stored-proc style, preferred)
+         OR sql/02_etl_procs/100-150 (script style, pass -ScriptStyle)
       4. tests/run_all_tests.sql   (assertions; non-zero exit on failure)
 
     Northwind load (sql/00_setup/002_load_northwind_instructions.md) is
-    manual — instnwnd.sql must be applied before running this script. The
-    runner will skip the setup phase if -SkipSetup is passed.
-
-.PARAMETER ServerInstance
-    SQL Server instance, e.g. "localhost", "(local)\SQLEXPRESS", or
-    "tcp:myserver,1433".
-
-.PARAMETER UseIntegratedSecurity
-    Use Windows authentication. Default is $true.
-
-.PARAMETER SqlUser
-    SQL login. Required when -UseIntegratedSecurity:$false.
-
-.PARAMETER SqlPassword
-    SQL password. Required when -UseIntegratedSecurity:$false.
-
-.PARAMETER SkipSetup
-    Skip sql/00_setup (use this on subsequent runs after the databases
-    and CsvRaw data already exist).
-
-.PARAMETER ScriptStyle
-    Run the educational step-by-step scripts (110, 120, 130, 140, 150)
-    instead of the stored-procedure orchestrator (080 + EXEC usp_RunAll).
-    Default is the stored-proc style.
-
-.PARAMETER SkipTests
-    Skip the tests/ phase.
-
-.EXAMPLE
-    ./run.ps1 -ServerInstance "localhost"
-
-.EXAMPLE
-    ./run.ps1 -ServerInstance "(local)\SQLEXPRESS" -SkipSetup
-
-.EXAMPLE
-    ./run.ps1 -ServerInstance "tcp:db,1433" -UseIntegratedSecurity:$false -SqlUser sa -SqlPassword $env:SA_PASSWORD
+    manual. Apply Northwind before running this script.
 #>
 
 [CmdletBinding()]
@@ -60,22 +25,45 @@ param(
 
     [switch]$SkipSetup,
     [switch]$ScriptStyle,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$TrustServerCertificate
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
 
 function Resolve-Sqlcmd {
-    $candidates = @('sqlcmd', 'sqlcmd.exe')
-    foreach ($c in $candidates) {
-        $cmd = Get-Command $c -ErrorAction SilentlyContinue
+    foreach ($candidate in @('sqlcmd', 'sqlcmd.exe')) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
         if ($cmd) { return $cmd.Source }
     }
-    throw "sqlcmd not found on PATH. Install SQL Server command-line tools: https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-utility"
+    throw 'sqlcmd not found on PATH. Install SQL Server command-line tools.'
 }
 
 $sqlcmd = Resolve-Sqlcmd
+
+function New-SqlcmdArgs {
+    param(
+        [string]$Database = 'master'
+    )
+
+    $args = @('-S', $ServerInstance, '-d', $Database, '-b', '-I')
+
+    if ($UseIntegratedSecurity) {
+        $args += '-E'
+    } else {
+        if (-not $SqlUser -or -not $SqlPassword) {
+            throw '-SqlUser and -SqlPassword are required when -UseIntegratedSecurity:$false'
+        }
+        $args += @('-U', $SqlUser, '-P', $SqlPassword)
+    }
+
+    if ($TrustServerCertificate) {
+        $args += '-C'
+    }
+
+    return $args
+}
 
 function Invoke-SqlFile {
     param(
@@ -89,22 +77,8 @@ function Invoke-SqlFile {
     }
 
     Write-Host "  -> $($Path.Substring($repoRoot.Length + 1))" -ForegroundColor DarkGray
-
-    $args = @(
-        '-S', $ServerInstance,
-        '-d', $Database,
-        '-i', $Path,
-        '-b'                    # exit non-zero on T-SQL error
-    )
-
-    if ($UseIntegratedSecurity) {
-        $args += '-E'
-    } else {
-        if (-not $SqlUser -or -not $SqlPassword) {
-            throw '-SqlUser and -SqlPassword are required when -UseIntegratedSecurity:$false'
-        }
-        $args += @('-U', $SqlUser, '-P', $SqlPassword)
-    }
+    $args = New-SqlcmdArgs -Database $Database
+    $args += @('-i', $Path)
 
     & $sqlcmd @args
     if ($LASTEXITCODE -ne 0) {
@@ -119,12 +93,13 @@ function Invoke-SqlQuery {
         [string]$Database = 'MigrationLab'
     )
 
-    $args = @('-S', $ServerInstance, '-d', $Database, '-Q', $Query, '-b')
-    if ($UseIntegratedSecurity) { $args += '-E' }
-    else { $args += @('-U', $SqlUser, '-P', $SqlPassword) }
+    $args = New-SqlcmdArgs -Database $Database
+    $args += @('-Q', $Query)
 
     & $sqlcmd @args
-    if ($LASTEXITCODE -ne 0) { throw "sqlcmd query failed: $Query" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "sqlcmd query failed: $Query"
+    }
 }
 
 function Invoke-SqlPhase {
@@ -136,20 +111,19 @@ function Invoke-SqlPhase {
         [string]$Database = 'master'
     )
 
-    Write-Host ""
+    Write-Host ''
     Write-Host "[$PhaseName]" -ForegroundColor Cyan
-    foreach ($f in $Files) {
-        Invoke-SqlFile -Path $f -Database $Database
+    foreach ($file in $Files) {
+        Invoke-SqlFile -Path $file -Database $Database
     }
 }
 
 $startedAt = Get-Date
-Write-Host "MigrationLab runner" -ForegroundColor Green
+Write-Host 'MigrationLab runner' -ForegroundColor Green
 Write-Host "  Server:   $ServerInstance"
 Write-Host "  Auth:     $(if ($UseIntegratedSecurity) { 'Integrated' } else { "SQL ($SqlUser)" })"
 Write-Host "  Style:    $(if ($ScriptStyle) { 'step-by-step scripts' } else { 'stored procedures' })"
 
-# -------------------- 00_setup --------------------
 if (-not $SkipSetup) {
     $setupFiles = @(
         "$repoRoot/sql/00_setup/001_create_databases.sql",
@@ -158,30 +132,27 @@ if (-not $SkipSetup) {
         "$repoRoot/sql/00_setup/005_generate_csvraw_netnew.sql",
         "$repoRoot/sql/00_setup/006_validate_csvraw_load.sql"
     )
-    Write-Host ""
-    Write-Host "NOTE: sql/00_setup/002_load_northwind_instructions.md is manual." -ForegroundColor Yellow
-    Write-Host "      Apply Northwind (instnwnd.sql) before continuing if not already loaded." -ForegroundColor Yellow
-
+    Write-Host ''
+    Write-Host 'NOTE: sql/00_setup/002_load_northwind_instructions.md is manual.' -ForegroundColor Yellow
+    Write-Host '      Apply Northwind (instnwnd.sql) before continuing if not already loaded.' -ForegroundColor Yellow
     Invoke-SqlPhase -PhaseName '00_setup' -Files $setupFiles
 } else {
-    Write-Host ""
-    Write-Host "[00_setup] skipped (-SkipSetup)" -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '[00_setup] skipped (-SkipSetup)' -ForegroundColor DarkGray
 }
 
-# -------------------- 01_migrationlab --------------------
-$mlFiles = @(
+$migrationLabFiles = @(
     "$repoRoot/sql/01_migrationlab/010_create_schemas.sql",
     "$repoRoot/sql/01_migrationlab/020_create_snapshot_tables.sql",
     "$repoRoot/sql/01_migrationlab/030_create_ref_tables.sql",
     "$repoRoot/sql/01_migrationlab/040_create_work_tables.sql",
     "$repoRoot/sql/01_migrationlab/050_create_target_model_tables.sql",
     "$repoRoot/sql/01_migrationlab/060_create_target_tables.sql",
-    "$repoRoot/sql/01_migrationlab/070_create_reporting_views.sql",
-    "$repoRoot/sql/01_migrationlab/075_create_etl_infra.sql"
+    "$repoRoot/sql/01_migrationlab/075_create_etl_infra.sql",
+    "$repoRoot/sql/01_migrationlab/070_create_reporting_views.sql"
 )
-Invoke-SqlPhase -PhaseName '01_migrationlab' -Files $mlFiles -Database 'MigrationLab'
+Invoke-SqlPhase -PhaseName '01_migrationlab' -Files $migrationLabFiles -Database 'MigrationLab'
 
-# -------------------- 02_etl_procs --------------------
 if ($ScriptStyle) {
     $etlFiles = @(
         "$repoRoot/sql/02_etl_procs/100_etl_refresh_snapshots.sql",
@@ -197,26 +168,32 @@ if ($ScriptStyle) {
         -Files @("$repoRoot/sql/02_etl_procs/080_create_etl_procs.sql") `
         -Database 'MigrationLab'
 
-    Write-Host ""
-    Write-Host "[etl.usp_RunAll]" -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host '[etl.usp_RunAll]' -ForegroundColor Cyan
     Invoke-SqlQuery -Query 'DECLARE @b VARCHAR(50); EXEC etl.usp_RunAll @BatchID = @b OUTPUT; PRINT @b;' `
         -Database 'MigrationLab'
 }
 
-# -------------------- tests --------------------
 if (-not $SkipTests) {
-    $testRunner = "$repoRoot/tests/run_all_tests.sql"
-    if (Test-Path $testRunner) {
-        Invoke-SqlPhase -PhaseName 'tests' -Files @($testRunner) -Database 'MigrationLab'
+    $testFiles = @(
+        "$repoRoot/tests/010_test_reconciliation_invariant.sql",
+        "$repoRoot/tests/020_test_no_orphan_crosswalk.sql",
+        "$repoRoot/tests/030_test_no_duplicate_target_ids.sql",
+        "$repoRoot/tests/040_test_survivor_in_target.sql",
+        "$repoRoot/tests/050_test_required_fields.sql",
+        "$repoRoot/tests/060_test_runlog_clean_run.sql"
+    )
+    if (($testFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0) {
+        Invoke-SqlPhase -PhaseName 'tests' -Files $testFiles -Database 'MigrationLab'
     } else {
-        Write-Host ""
-        Write-Host "[tests] skipped — $testRunner not found" -ForegroundColor DarkGray
+        Write-Host ''
+        Write-Host '[tests] skipped - one or more test files not found' -ForegroundColor DarkGray
     }
 } else {
-    Write-Host ""
-    Write-Host "[tests] skipped (-SkipTests)" -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '[tests] skipped (-SkipTests)' -ForegroundColor DarkGray
 }
 
 $elapsed = (Get-Date) - $startedAt
-Write-Host ""
+Write-Host ''
 Write-Host ("Done in {0:n1}s." -f $elapsed.TotalSeconds) -ForegroundColor Green
