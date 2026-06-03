@@ -32,3 +32,6 @@ __pycache__/
 
 # Logs
 *.log
+
+# Generated animation frames (final MP4/GIF are committed)
+diagrams/frames/

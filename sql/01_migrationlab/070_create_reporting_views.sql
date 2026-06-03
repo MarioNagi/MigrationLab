@@ -357,25 +357,70 @@ WITH source_counts AS (
 ),
 loaded_counts AS (
     SELECT 'Customers' AS EntityType, 'Northwind' AS SourceSystem,
-           (SELECT COUNT(*) FROM target_sap_ecc.CustomerMaster WHERE MigrationSource LIKE '%Northwind%') AS LoadedRecords
+           (SELECT COUNT(*)
+            FROM work_otc.CustomersCrosswalk cw
+            WHERE cw.SourceSystem = 'Northwind'
+              AND cw.TargetCustomerID IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM etl.RejectLog r
+                  WHERE r.EntityType = 'Customer'
+                    AND r.SourceSystem = cw.SourceSystem
+                    AND r.SourceID = cw.SourceID
+              )) AS LoadedRecords
     UNION ALL
     SELECT 'Customers', 'CsvRaw',
-           (SELECT COUNT(*) FROM target_sap_ecc.CustomerMaster WHERE MigrationSource LIKE '%CsvRaw%')
+           (SELECT COUNT(*)
+            FROM work_otc.CustomersCrosswalk cw
+            WHERE cw.SourceSystem = 'CsvRaw'
+              AND cw.TargetCustomerID IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM etl.RejectLog r
+                  WHERE r.EntityType = 'Customer'
+                    AND r.SourceSystem = cw.SourceSystem
+                    AND r.SourceID = cw.SourceID
+              ))
     UNION ALL
     SELECT 'Vendors', 'Northwind',
-           (SELECT COUNT(*) FROM target_sap_ecc.VendorMaster   WHERE MigrationSource LIKE '%Northwind%')
+           (SELECT COUNT(*)
+            FROM work_ptp.VendorsCrosswalk cw
+            WHERE cw.SourceSystem = 'Northwind'
+              AND cw.TargetVendorID IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM etl.RejectLog r
+                  WHERE r.EntityType = 'Vendor'
+                    AND r.SourceSystem = cw.SourceSystem
+                    AND r.SourceID = cw.SourceID
+              ))
     UNION ALL
     SELECT 'Vendors', 'CsvRaw',
-           (SELECT COUNT(*) FROM target_sap_ecc.VendorMaster   WHERE MigrationSource LIKE '%CsvRaw%')
+           (SELECT COUNT(*)
+            FROM work_ptp.VendorsCrosswalk cw
+            WHERE cw.SourceSystem = 'CsvRaw'
+              AND cw.TargetVendorID IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM etl.RejectLog r
+                  WHERE r.EntityType = 'Vendor'
+                    AND r.SourceSystem = cw.SourceSystem
+                    AND r.SourceID = cw.SourceID
+              ))
 ),
 reject_counts AS (
     SELECT
-        EntityType,
+        CASE EntityType
+            WHEN 'Customer' THEN 'Customers'
+            WHEN 'Vendor' THEN 'Vendors'
+            ELSE EntityType
+        END AS EntityType,
         SourceSystem,
         SUM(CASE WHEN ReasonCode = 'DUPLICATE_MERGED' THEN 1 ELSE 0 END) AS MergedAwayRecords,
         SUM(CASE WHEN ReasonCode <> 'DUPLICATE_MERGED' THEN 1 ELSE 0 END) AS OtherRejectedRecords
     FROM etl.RejectLog
-    GROUP BY EntityType, SourceSystem
+    GROUP BY CASE EntityType
+            WHEN 'Customer' THEN 'Customers'
+            WHEN 'Vendor' THEN 'Vendors'
+            ELSE EntityType
+        END,
+        SourceSystem
 )
 SELECT
     s.EntityType,

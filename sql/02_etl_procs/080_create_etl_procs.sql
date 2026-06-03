@@ -134,9 +134,11 @@ BEGIN
         COMMIT;
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         IF @@TRANCOUNT > 0 ROLLBACK;
         IF @run IS NOT NULL
-            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;
@@ -161,12 +163,12 @@ BEGIN
         BEGIN TRANSACTION;
 
         EXEC etl.usp_LogStepStart @BatchID, @proc, 'Truncate work_otc tables', @run OUTPUT;
-        TRUNCATE TABLE work_otc.CustomersCrosswalk;
-        TRUNCATE TABLE work_otc.CustomersSurvivorship;
-        TRUNCATE TABLE work_otc.CustomersMatchGroupMembers;
-        TRUNCATE TABLE work_otc.CustomersMatchGroups;
-        TRUNCATE TABLE work_otc.CustomersMatchKeys;
-        TRUNCATE TABLE work_otc.CustomersCanonical;
+        DELETE FROM work_otc.CustomersCrosswalk;
+        DELETE FROM work_otc.CustomersSurvivorship;
+        DELETE FROM work_otc.CustomersMatchGroupMembers;
+        DELETE FROM work_otc.CustomersMatchKeys;
+        DELETE FROM work_otc.CustomersMatchGroups;
+        DELETE FROM work_otc.CustomersCanonical;
         EXEC etl.usp_LogStepEnd @run, 0;
 
         -- Northwind: split ContactName -> First/Middle/Last
@@ -323,10 +325,11 @@ BEGIN
         EXEC etl.usp_LogStepStart @BatchID, @proc, 'Build crosswalk', @run OUTPUT;
         INSERT INTO work_otc.CustomersCrosswalk (SourceSystem, SourceID, WorkCustomerID)
         SELECT c.SourceSystem, c.SourceID,
-               COALESCE(s.WorkCustomerID, c.WorkCustomerID)
+               MIN(COALESCE(s.WorkCustomerID, c.WorkCustomerID))
         FROM work_otc.CustomersCanonical c
         LEFT JOIN work_otc.CustomersMatchGroupMembers mgm ON c.WorkCustomerID = mgm.WorkCustomerID
-        LEFT JOIN work_otc.CustomersSurvivorship s ON mgm.MatchGroupID = s.MatchGroupID;
+        LEFT JOIN work_otc.CustomersSurvivorship s ON mgm.MatchGroupID = s.MatchGroupID
+        GROUP BY c.SourceSystem, c.SourceID;
         SET @rows = @@ROWCOUNT;
         EXEC etl.usp_LogStepEnd @run, @rows;
 
@@ -336,24 +339,27 @@ BEGIN
             (BatchID, EntityType, SourceSystem, SourceID, Stage, ReasonCode, ReasonDetail, SurvivorWorkID)
         SELECT @BatchID, 'Customer', c.SourceSystem, c.SourceID, 'Survivorship',
                'DUPLICATE_MERGED',
-               CONCAT('Merged into survivor WorkCustomerID=', s.WorkCustomerID,
-                      ' via ', mg.MatchKeyType, ' match (', s.SurvivorshipReason, ')'),
-               s.WorkCustomerID
+               CONCAT('Merged into survivor WorkCustomerID=', MIN(s.WorkCustomerID),
+                      ' via one or more deterministic match keys.'),
+               MIN(s.WorkCustomerID)
         FROM work_otc.CustomersCanonical c
         INNER JOIN work_otc.CustomersMatchGroupMembers mgm ON c.WorkCustomerID = mgm.WorkCustomerID
         INNER JOIN work_otc.CustomersMatchGroups mg ON mgm.MatchGroupID = mg.MatchGroupID
         INNER JOIN work_otc.CustomersSurvivorship s ON mg.MatchGroupID = s.MatchGroupID
         WHERE mg.GroupSize > 1
-          AND c.WorkCustomerID <> s.WorkCustomerID;
+          AND c.WorkCustomerID <> s.WorkCustomerID
+        GROUP BY c.SourceSystem, c.SourceID;
         SET @rows = @@ROWCOUNT;
         EXEC etl.usp_LogStepEnd @run, @rows;
 
         COMMIT;
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         IF @@TRANCOUNT > 0 ROLLBACK;
         IF @run IS NOT NULL
-            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;
@@ -375,12 +381,12 @@ BEGIN
         BEGIN TRANSACTION;
 
         EXEC etl.usp_LogStepStart @BatchID, @proc, 'Truncate work_ptp tables', @run OUTPUT;
-        TRUNCATE TABLE work_ptp.VendorsCrosswalk;
-        TRUNCATE TABLE work_ptp.VendorsSurvivorship;
-        TRUNCATE TABLE work_ptp.VendorsMatchGroupMembers;
-        TRUNCATE TABLE work_ptp.VendorsMatchGroups;
-        TRUNCATE TABLE work_ptp.VendorsMatchKeys;
-        TRUNCATE TABLE work_ptp.VendorsCanonical;
+        DELETE FROM work_ptp.VendorsCrosswalk;
+        DELETE FROM work_ptp.VendorsSurvivorship;
+        DELETE FROM work_ptp.VendorsMatchGroupMembers;
+        DELETE FROM work_ptp.VendorsMatchKeys;
+        DELETE FROM work_ptp.VendorsMatchGroups;
+        DELETE FROM work_ptp.VendorsCanonical;
         EXEC etl.usp_LogStepEnd @run, 0;
 
         EXEC etl.usp_LogStepStart @BatchID, @proc, 'Load Northwind suppliers (canonical)', @run OUTPUT;
@@ -527,10 +533,11 @@ BEGIN
         EXEC etl.usp_LogStepStart @BatchID, @proc, 'Build crosswalk', @run OUTPUT;
         INSERT INTO work_ptp.VendorsCrosswalk (SourceSystem, SourceID, WorkVendorID)
         SELECT v.SourceSystem, v.SourceID,
-               COALESCE(s.WorkVendorID, v.WorkVendorID)
+               MIN(COALESCE(s.WorkVendorID, v.WorkVendorID))
         FROM work_ptp.VendorsCanonical v
         LEFT JOIN work_ptp.VendorsMatchGroupMembers mgm ON v.WorkVendorID = mgm.WorkVendorID
-        LEFT JOIN work_ptp.VendorsSurvivorship s ON mgm.MatchGroupID = s.MatchGroupID;
+        LEFT JOIN work_ptp.VendorsSurvivorship s ON mgm.MatchGroupID = s.MatchGroupID
+        GROUP BY v.SourceSystem, v.SourceID;
         SET @rows = @@ROWCOUNT;
         EXEC etl.usp_LogStepEnd @run, @rows;
 
@@ -539,24 +546,27 @@ BEGIN
             (BatchID, EntityType, SourceSystem, SourceID, Stage, ReasonCode, ReasonDetail, SurvivorWorkID)
         SELECT @BatchID, 'Vendor', v.SourceSystem, v.SourceID, 'Survivorship',
                'DUPLICATE_MERGED',
-               CONCAT('Merged into survivor WorkVendorID=', s.WorkVendorID,
-                      ' via ', mg.MatchKeyType, ' match (', s.SurvivorshipReason, ')'),
-               s.WorkVendorID
+               CONCAT('Merged into survivor WorkVendorID=', MIN(s.WorkVendorID),
+                      ' via one or more deterministic match keys.'),
+               MIN(s.WorkVendorID)
         FROM work_ptp.VendorsCanonical v
         INNER JOIN work_ptp.VendorsMatchGroupMembers mgm ON v.WorkVendorID = mgm.WorkVendorID
         INNER JOIN work_ptp.VendorsMatchGroups mg ON mgm.MatchGroupID = mg.MatchGroupID
         INNER JOIN work_ptp.VendorsSurvivorship s ON mg.MatchGroupID = s.MatchGroupID
         WHERE mg.GroupSize > 1
-          AND v.WorkVendorID <> s.WorkVendorID;
+          AND v.WorkVendorID <> s.WorkVendorID
+        GROUP BY v.SourceSystem, v.SourceID;
         SET @rows = @@ROWCOUNT;
         EXEC etl.usp_LogStepEnd @run, @rows;
 
         COMMIT;
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         IF @@TRANCOUNT > 0 ROLLBACK;
         IF @run IS NOT NULL
-            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;
@@ -677,7 +687,15 @@ BEGIN
             INNER JOIN work_otc.CustomersCanonical surv ON surv.WorkCustomerID = ca.SurvivorWorkID
             CROSS APPLY (
                 SELECT
-                    STRING_AGG(DISTINCT c2.SourceSystem, ',') WITHIN GROUP (ORDER BY c2.SourceSystem) AS SourceSystems,
+                    (
+                        SELECT STRING_AGG(src.SourceSystem, ',') WITHIN GROUP (ORDER BY src.SourceSystem)
+                        FROM (
+                            SELECT DISTINCT c3.SourceSystem
+                            FROM work_otc.CustomersCanonical c3
+                            LEFT JOIN work_otc.CustomersMatchGroupMembers mgm3 ON c3.WorkCustomerID = mgm3.WorkCustomerID
+                            WHERE COALESCE(mgm3.MatchGroupID, -c3.WorkCustomerID) = ca.ClusterID
+                        ) src
+                    ) AS SourceSystems,
                     COUNT(*) AS SourceRecordCount
                 FROM work_otc.CustomersCanonical c2
                 LEFT JOIN work_otc.CustomersMatchGroupMembers mgm2 ON c2.WorkCustomerID = mgm2.WorkCustomerID
@@ -809,7 +827,15 @@ BEGIN
             INNER JOIN work_ptp.VendorsCanonical surv ON surv.WorkVendorID = ca.SurvivorWorkID
             CROSS APPLY (
                 SELECT
-                    STRING_AGG(DISTINCT v2.SourceSystem, ',') WITHIN GROUP (ORDER BY v2.SourceSystem) AS SourceSystems,
+                    (
+                        SELECT STRING_AGG(src.SourceSystem, ',') WITHIN GROUP (ORDER BY src.SourceSystem)
+                        FROM (
+                            SELECT DISTINCT v3.SourceSystem
+                            FROM work_ptp.VendorsCanonical v3
+                            LEFT JOIN work_ptp.VendorsMatchGroupMembers mgm3 ON v3.WorkVendorID = mgm3.WorkVendorID
+                            WHERE COALESCE(mgm3.MatchGroupID, -v3.WorkVendorID) = ca.ClusterID
+                        ) src
+                    ) AS SourceSystems,
                     COUNT(*) AS SourceRecordCount
                 FROM work_ptp.VendorsCanonical v2
                 LEFT JOIN work_ptp.VendorsMatchGroupMembers mgm2 ON v2.WorkVendorID = mgm2.WorkVendorID
@@ -887,9 +913,11 @@ BEGIN
         COMMIT;
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         IF @@TRANCOUNT > 0 ROLLBACK;
         IF @run IS NOT NULL
-            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;
@@ -924,9 +952,9 @@ BEGIN
             CreatedBy, CreatedDate, CreatedTime, LastChangedBy, LastChangedDate, LastChangedTime,
             MigrationSource, MigrationTimestamp, MigrationBatchID)
         SELECT
-            CustomerID, CompanyName, NULL, NULL, NULL,
-            Street, NULL, City, Region, PostalCode, CountryCode,
-            ContactFullName, NULL, Phone, NULL, NULL, NULL, Email,
+            CustomerID, LEFT(CompanyName, 80), NULL, NULL, NULL,
+            LEFT(Street, 60), NULL, LEFT(City, 40), LEFT(Region, 3), LEFT(PostalCode, 10), CountryCode,
+            LEFT(ContactFullName, 80), NULL, LEFT(Phone, 30), NULL, NULL, NULL, LEFT(Email, 241),
             '0001', '01', 'A', ' ',
             'MIGRATION', CAST(@ts AS DATE), CAST(@ts AS TIME),
             'MIGRATION', CAST(@ts AS DATE), CAST(@ts AS TIME),
@@ -944,9 +972,9 @@ BEGIN
             CreatedBy, CreatedDate, CreatedTime, LastChangedBy, LastChangedDate, LastChangedTime,
             MigrationSource, MigrationTimestamp, MigrationBatchID)
         SELECT
-            VendorID, VendorName, NULL, NULL, NULL,
-            Street, NULL, City, Region, PostalCode, CountryCode,
-            ContactFullName, NULL, Phone, NULL, NULL, Fax, Email, HomePage,
+            VendorID, LEFT(VendorName, 80), NULL, NULL, NULL,
+            LEFT(Street, 60), NULL, LEFT(City, 40), LEFT(Region, 3), LEFT(PostalCode, 10), CountryCode,
+            LEFT(ContactFullName, 80), NULL, LEFT(Phone, 30), NULL, NULL, LEFT(Fax, 30), LEFT(Email, 241), LEFT(HomePage, 255),
             '0001', '01', 'A', ' ',
             'MIGRATION', CAST(@ts AS DATE), CAST(@ts AS TIME),
             'MIGRATION', CAST(@ts AS DATE), CAST(@ts AS TIME),
@@ -958,9 +986,11 @@ BEGIN
         COMMIT;
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         IF @@TRANCOUNT > 0 ROLLBACK;
         IF @run IS NOT NULL
-            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            EXEC etl.usp_LogStepEnd @run, NULL, 'FAILED', @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;
@@ -991,8 +1021,10 @@ BEGIN
         EXEC etl.usp_LogStepEnd @overall, NULL, 'COMPLETED';
     END TRY
     BEGIN CATCH
+        DECLARE @errNo INT = ERROR_NUMBER();
+        DECLARE @errMsg NVARCHAR(2000) = ERROR_MESSAGE();
         EXEC etl.usp_LogStepEnd @overall, NULL, 'FAILED',
-            @ErrorNumber = ERROR_NUMBER, @ErrorMessage = ERROR_MESSAGE;
+            @ErrorNumber = @errNo, @ErrorMessage = @errMsg;
         THROW;
     END CATCH
 END;

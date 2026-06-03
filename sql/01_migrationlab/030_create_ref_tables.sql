@@ -266,8 +266,7 @@ VALUES
     
     -- Default/Unknown (for unmapped countries)
     ('XX', 'Unknown', 'Unknown', 1),
-    ('XX', 'Unknown', '', 0),
-    ('XX', 'Unknown', NULL, 0);
+    ('XX', 'Unknown', '', 0);
 GO
 
 -- Index for fast lookup by variant name
@@ -321,11 +320,11 @@ PRINT '';
 PRINT 'Summary:';
 SELECT 
     'reference.CountryCodes' AS TableName,
-    COUNT(*) AS RowCount
+    COUNT(*) AS [RowsLoaded]
 FROM reference.CountryCodes
 UNION ALL
 SELECT 
     'reference.MatchRules' AS TableName,
-    COUNT(*) AS RowCount
+    COUNT(*) AS [RowsLoaded]
 FROM reference.MatchRules;
 GO

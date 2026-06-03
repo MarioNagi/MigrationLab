@@ -62,11 +62,12 @@ GO
    ============================================================================= */
 
 -- Drop existing tables if they exist (for re-runs)
-IF OBJECT_ID('work_otc.CustomersCanonical','U') IS NOT NULL DROP TABLE work_otc.CustomersCanonical;
+IF OBJECT_ID('work_otc.CustomersCrosswalk','U') IS NOT NULL DROP TABLE work_otc.CustomersCrosswalk;
+IF OBJECT_ID('work_otc.CustomersSurvivorship','U') IS NOT NULL DROP TABLE work_otc.CustomersSurvivorship;
+IF OBJECT_ID('work_otc.CustomersMatchGroupMembers','U') IS NOT NULL DROP TABLE work_otc.CustomersMatchGroupMembers;
 IF OBJECT_ID('work_otc.CustomersMatchKeys','U') IS NOT NULL DROP TABLE work_otc.CustomersMatchKeys;
 IF OBJECT_ID('work_otc.CustomersMatchGroups','U') IS NOT NULL DROP TABLE work_otc.CustomersMatchGroups;
-IF OBJECT_ID('work_otc.CustomersSurvivorship','U') IS NOT NULL DROP TABLE work_otc.CustomersSurvivorship;
-IF OBJECT_ID('work_otc.CustomersCrosswalk','U') IS NOT NULL DROP TABLE work_otc.CustomersCrosswalk;
+IF OBJECT_ID('work_otc.CustomersCanonical','U') IS NOT NULL DROP TABLE work_otc.CustomersCanonical;
 GO
 
 -- Canonical table: All customers from all sources, normalized
@@ -121,7 +122,7 @@ GO
 CREATE TABLE work_otc.CustomersMatchKeys (
     WorkCustomerID        BIGINT          NOT NULL,
     MatchKeyType          VARCHAR(50)     NOT NULL,  -- 'Email', 'Phone', 'NameCity', 'CompanyCity'
-    MatchKeyValue         NVARCHAR(500)   NOT NULL,  -- Normalized match key value
+    MatchKeyValue         NVARCHAR(350)   NOT NULL,  -- Normalized match key value
     
     CONSTRAINT PK_work_otc_CustomersMatchKeys PRIMARY KEY CLUSTERED (WorkCustomerID, MatchKeyType, MatchKeyValue),
     CONSTRAINT FK_work_otc_CustomersMatchKeys_Canonical 
@@ -133,7 +134,7 @@ GO
 CREATE TABLE work_otc.CustomersMatchGroups (
     MatchGroupID          BIGINT          IDENTITY(1,1) NOT NULL,
     MatchKeyType          VARCHAR(50)     NOT NULL,  -- Which match rule created this group
-    MatchKeyValue         NVARCHAR(500)   NOT NULL,  -- The match key value
+    MatchKeyValue         NVARCHAR(350)   NOT NULL,  -- The match key value
     GroupSize             INT             NOT NULL DEFAULT 0,  -- Number of records in group
     
     CONSTRAINT PK_work_otc_CustomersMatchGroups PRIMARY KEY CLUSTERED (MatchGroupID),
@@ -208,12 +209,12 @@ GO
    ============================================================================= */
 
 -- Drop existing tables if they exist (for re-runs)
-IF OBJECT_ID('work_ptp.VendorsCanonical','U') IS NOT NULL DROP TABLE work_ptp.VendorsCanonical;
+IF OBJECT_ID('work_ptp.VendorsCrosswalk','U') IS NOT NULL DROP TABLE work_ptp.VendorsCrosswalk;
+IF OBJECT_ID('work_ptp.VendorsSurvivorship','U') IS NOT NULL DROP TABLE work_ptp.VendorsSurvivorship;
+IF OBJECT_ID('work_ptp.VendorsMatchGroupMembers','U') IS NOT NULL DROP TABLE work_ptp.VendorsMatchGroupMembers;
 IF OBJECT_ID('work_ptp.VendorsMatchKeys','U') IS NOT NULL DROP TABLE work_ptp.VendorsMatchKeys;
 IF OBJECT_ID('work_ptp.VendorsMatchGroups','U') IS NOT NULL DROP TABLE work_ptp.VendorsMatchGroups;
-IF OBJECT_ID('work_ptp.VendorsMatchGroupMembers','U') IS NOT NULL DROP TABLE work_ptp.VendorsMatchGroupMembers;
-IF OBJECT_ID('work_ptp.VendorsSurvivorship','U') IS NOT NULL DROP TABLE work_ptp.VendorsSurvivorship;
-IF OBJECT_ID('work_ptp.VendorsCrosswalk','U') IS NOT NULL DROP TABLE work_ptp.VendorsCrosswalk;
+IF OBJECT_ID('work_ptp.VendorsCanonical','U') IS NOT NULL DROP TABLE work_ptp.VendorsCanonical;
 GO
 
 -- Canonical table: All vendors from all sources, normalized
@@ -268,7 +269,7 @@ GO
 CREATE TABLE work_ptp.VendorsMatchKeys (
     WorkVendorID          BIGINT          NOT NULL,
     MatchKeyType          VARCHAR(50)     NOT NULL,  -- 'Email', 'Phone', 'NameCity', 'CompanyCity'
-    MatchKeyValue         NVARCHAR(500)   NOT NULL,  -- Normalized match key value
+    MatchKeyValue         NVARCHAR(350)   NOT NULL,  -- Normalized match key value
     
     CONSTRAINT PK_work_ptp_VendorsMatchKeys PRIMARY KEY CLUSTERED (WorkVendorID, MatchKeyType, MatchKeyValue),
     CONSTRAINT FK_work_ptp_VendorsMatchKeys_Canonical 
@@ -280,7 +281,7 @@ GO
 CREATE TABLE work_ptp.VendorsMatchGroups (
     MatchGroupID          BIGINT          IDENTITY(1,1) NOT NULL,
     MatchKeyType          VARCHAR(50)     NOT NULL,  -- Which match rule created this group
-    MatchKeyValue         NVARCHAR(500)   NOT NULL,  -- The match key value
+    MatchKeyValue         NVARCHAR(350)   NOT NULL,  -- The match key value
     GroupSize             INT             NOT NULL DEFAULT 0,  -- Number of records in group
     
     CONSTRAINT PK_work_ptp_VendorsMatchGroups PRIMARY KEY CLUSTERED (MatchGroupID),
